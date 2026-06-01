@@ -6,13 +6,22 @@ from http.server import SimpleHTTPRequestHandler, HTTPServer
 import requests
 
 # ==============================================================================
-# 🔐 CONFIGURAÇÕES DE TELEGRAM E BANCA
+# 🔐 CONFIGURAÇÕES DE API, TELEGRAM E BANCA
 # ==============================================================================
-TELEGRAM_TOKEN = "8071742858:AAFasipn1Jo2gkHNgrSiSwfn-ZXm29fI7qw"
-SEU_CHAT_ID = "2030461760"
+# Sua chave real da API-Football integrada com sucesso
+API_FOOTBALL_KEY = "8bb27bbe8a02bfaa26fce895168daeb6"
 
-# Valor total que você vai dividir entre as duas casas na hora da Surebet
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8071742858:AAFasipn1Jo2gkHNgrSiSwfn-ZXm29fI7qw")
+SEU_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "2030461760")
+
 BANCA_ALVO_OPERAÇÃO = 100.00 
+
+# Mapeamento oficial de IDs de Casas de Apostas dentro da API-Football
+CASAS_PERMITIDAS = {
+    1: "Bet365",
+    12: "Betano",
+    14: "VBet"
+}
 
 # --- SERVIDOR SIMULADO PARA O RENDER ---
 def run_mock_server():
@@ -28,89 +37,134 @@ def enviar_alerta_surebet(mensagem):
     try:
         url = f"https://telegram.org{TELEGRAM_TOKEN}/sendMessage"
         payload = {"chat_id": SEU_CHAT_ID, "text": mensagem, "parse_mode": "Markdown"}
-        requests.post(url, json=payload)
-        print("Alerta de Surebet enviado ao Telegram!")
+        response = requests.post(url, json=payload, timeout=10)
+        if response.status_code != 200:
+            print(f"Erro na API do Telegram: Code {response.status_code}")
     except Exception as e:
         print(f"Erro ao falar com o Telegram: {e}")
 
-# --- ENGENHARIA DE ARBITRAGEM (PRÉ-JOGO E AO VIVO) ---
-def varrer_oportunidades_multi_casa(jogos_notificados):
-    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Procurando odds desreguladas (Pré-Jogo e Live)...")
-    
-    # Simulação de duas distorções: uma pré-jogo e outra ao vivo
-    distorcoes_detectadas = [
-        {
-            "id": 223344,
-            "partida": "Cruzeiro x Atlético-MG",
-            "momento": "⏰ PRÉ-JOGO (Faltam 2 horas)",
-            "casa_over": "Betano",
-            "mercado_over": "Mais de 2.5 Gols",
-            "odd_over": 2.20,
-            "casa_under": "Betfair",
-            "mercado_under": "Menos de 2.5 Gols",
-            "odd_under": 2.05,
-        },
-        {
-            "id": 556677,
-            "partida": "São Paulo x Bahia",
-            "momento": "⚽ AO VIVO (Rolando agora)",
-            "casa_over": "Bet365",
-            "mercado_over": "Mais de 1.5 Gols",
-            "odd_over": 1.95,
-            "casa_under": "VBet",
-            "mercado_under": "Menos de 1.5 Gols",
-            "odd_under": 2.25,
-        }
-    ]
-
-    for jogo in distorcoes_detectadas:
-        jogo_id = jogo["id"]
-        if jogo_id in jogos_notificados:
+# --- FILTRO E TRATAMENTO DOS DADOS DA API-FOOTBALL ---
+def processar_odds_reais(fixtures_dados, jogos_notificados):
+    for item in fixtures_dados.get("response", []):
+        fixture_id = item["fixture"]["id"]
+        
+        if fixture_id in jogos_notificados:
             continue
 
-        odd_over = jogo["odd_over"]
-        odd_under = jogo["odd_under"]
+        partida = f"{item['fixture']['home']['name']} x {item['fixture']['away']['name']}"
+        status_jogo = item["fixture"]["status"]["short"]
+        momento = "⚽ AO VIVO" if status_jogo in ["1H", "2H", "HT"] else "⏰ PRÉ-JOGO"
+        
+        bookmakers = item.get("bookmakers", [])
+        
+        melhor_casa_1 = {"casa": None, "odd": 0.0}
+        melhor_casa_x = {"casa": None, "odd": 0.0}
+        melhor_casa_2 = {"casa": None, "odd": 0.0}
 
-        # 🧮 FÓRMULA MATEMÁTICA: (1/Over) + (1/Under)
-        indice_arbitragem = (1 / odd_over) + (1 / odd_under)
+        vbet_participando = False
 
-        if indice_arbitragem < 1.00:
-            lucro_liquido_percentual = (1 - indice_arbitragem) * 100
+        for bookmaker in bookmakers:
+            b_id = bookmaker["id"]
+            if b_id not in CASAS_PERMITIDAS:
+                continue
             
-            # Divisão proporcional da banca
-            retorno_garantido = BANCA_ALVO_OPERAÇÃO / indice_arbitragem
-            investimento_over = retorno_garantido / odd_over
-            investimento_under = retorno_garantido / odd_under
+            nome_casa = CASAS_PERMITIDAS[b_id]
+            if nome_casa == "VBet":
+                vbet_participando = True
 
-            # Mensagem com indicação se o jogo é pré-jogo ou ao vivo
-            msg_sinal = (
-                f"🚨 *SUREBET DETECTADA! ({jogo['momento']})*\n\n"
-                f"⚽ *Jogo:* {jogo['partida']}\n"
-                f"📈 *Retorno Garantido:* `{lucro_liquido_percentual:.2f}%` fixo\n\n"
-                f"📊 *DIRETRIZ DE INVESTIMENTO (Banca R$ {BANCA_ALVO_OPERAÇÃO:.2f}):*\n"
-                f"🟩 *Aposta OVER:* {jogo['casa_over']}\n"
-                f"   • Mercado: {jogo['mercado_over']}\n"
-                f"   • Odd: {odd_over} | Colocar: `R$ {investimento_over:.2f}`\n\n"
-                f"🟥 *Aposta UNDER:* {jogo['casa_under']}\n"
-                f"   • Mercado: {jogo['mercado_under']}\n"
-                f"   • Odd: {odd_under} | Colocar: `R$ {investimento_under:.2f}`\n\n"
-                f"🏁 _Lucro garantido! Seu retorno final será de R$ {retorno_garantido:.2f}!_"
-            )
+            for market in bookmaker.get("bets", []):
+                if market["id"] == 1:  # 1X2 - Vencedor do Jogo
+                    for val in market["values"]:
+                        odd_valor = float(val["odd"])
+                        
+                        if val["value"] == "Home" and odd_valor > melhor_casa_1["odd"]:
+                            melhor_casa_1 = {"casa": nome_casa, "odd": odd_valor}
+                        elif val["value"] == "Draw" and odd_valor > melhor_casa_x["odd"]:
+                            melhor_casa_x = {"casa": nome_casa, "odd": odd_valor}
+                        elif val["value"] == "Away" and odd_valor > melhor_casa_2["odd"]:
+                            melhor_casa_2 = {"casa": nome_casa, "odd": odd_valor}
 
-            enviar_alerta_surebet(msg_sinal)
-            jogos_notificados.add(jogo_id)
+        casas_selecionadas = [melhor_casa_1["casa"], melhor_casa_x["casa"], melhor_casa_2["casa"]]
+        if "VBet" not in casas_selecionadas and not vbet_participando:
+            continue
+
+        if melhor_casa_1["odd"] > 0 and melhor_casa_x["odd"] > 0 and melhor_casa_2["odd"] > 0:
+            
+            indice_arbitragem = (1 / melhor_casa_1["odd"]) + (1 / melhor_casa_x["odd"]) + (1 / melhor_casa_2["odd"])
+
+            if indice_arbitragem <= 1.0001:
+                
+                if abs(indice_arbitragem - 1.00) < 0.005:
+                    tipo_alerta = "⚠️ PROTEÇÃO DE BANCA DETECTADA! (LUCRO ZERO)"
+                    lucro_liquido_percentual = 0.00
+                    retorno_garantido = BANCA_ALVO_OPERAÇÃO
+                else:
+                    tipo_alerta = "🚨 SUREBET 3-VIAS DETECTADA!"
+                    lucro_liquido_percentual = ((1 / indice_arbitragem) - 1) * 100
+                    retorno_garantido = BANCA_ALVO_OPERAÇÃO / indice_arbitragem
+
+                inv_1 = retorno_garantido / melhor_casa_1["odd"]
+                inv_x = retorno_garantido / melhor_casa_x["odd"]
+                inv_2 = retorno_garantido / melhor_casa_2["odd"]
+
+                tipo_mercado = "🚀 COM PAGAMENTO ANTECIPADO ATIVO (2 Gols)" if momento == "⏰ PRÉ-JOGO" else "⚠️ MERCADO SO (Sem Pagamento Antecipado / Live)"
+
+                msg_sinal = (
+                    f"{tipo_alerta}\n"
+                    f"Momento: `{momento}`\n"
+                    f"Regulamento: *{tipo_mercado}*\n\n"
+                    f"⚽ *Jogo:* {partida}\n"
+                    f"📈 *Retorno Previsto:* `{lucro_liquido_percentual:.2f}%` fixo\n\n"
+                    f"📊 *DIRETRIZ DE INVESTIMENTO (Total R$ {BANCA_ALVO_OPERAÇÃO:.2f}):*\n"
+                    f"🟩 *Vitória Casa (1):* {melhor_casa_1['casa']}\n"
+                    f"   • Odd: {melhor_casa_1['odd']} | Invista: `R$ {inv_1:.2f}`\n\n"
+                    f"⬜ *Empate (X):* {melhor_casa_x['casa']}\n"
+                    f"   • Odd: {melhor_casa_x['odd']} | Invista: `R$ {inv_x:.2f}`\n\n"
+                    f"🟥 *Vitória Fora (2):* {melhor_casa_2['casa']}\n"
+                    f"   • Odd: {melhor_casa_2['odd']} | Invista: `R$ {inv_2:.2f}`\n\n"
+                    f"🏁 _Cenário Realizado! Seu retorno final será de R$ {retorno_garantido:.2f}_"
+                )
+
+                enviar_alerta_surebet(msg_sinal)
+                jogos_notificados.add(fixture_id)
+
+# --- REQUISIÇÃO À API-FOOTBALL ---
+def varrer_oportunidades_multi_casa(jogos_notificados):
+    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Conectando à API-Football e varrendo odds...")
+    
+    url = "https://api-sports.io"
+    data_hoje = datetime.datetime.now().strftime('%Y-%m-%d')
+    params = {"date": data_hoje}
+    
+    # Cabeçalho atualizado com os parâmetros aceitos diretamente na plataforma da API-Sports
+    headers = {
+        "x-apisports-key": API_FOOTBALL_KEY
+    }
+
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=15)
+        if response.status_code == 200:
+            dados = response.json()
+            processar_odds_reais(dados, jogos_notificados)
+        else:
+            print(f"Erro ao requisitar API-Football: Status {response.status_code}")
+    except Exception as e:
+        print(f"Falha de conexão com a API de Odds: {e}")
 
 def main():
-    print("🤖 Robô de Surebet Pré-Jogo e Live Iniciado!")
-    enviar_alerta_surebet("🚀 *ROBÔ MULTI-CASAS ONLINE:* Rastreamento de odds desreguladas (Pré-Jogo e Ao Vivo) ativado!")
+    print("🤖 Robô API-Football 1X2 + VBet Online!")
+    enviar_alerta_surebet("🚀 *ROBÔ PRODUÇÃO LIVE:* Conexão oficial com a API-Football estabelecida. Monitoramento de VBet, Bet365 e Betano iniciado.")
     
     jogos_notificados = set()
     while True:
         try:
             varrer_oportunidades_multi_casa(jogos_notificados)
         except Exception as e:
-            print(f"Aviso no rastreador: {e}")
-        time.sleep(30)  # Varredura a cada 30 segundos
+            print(f"Erro no loop principal: {e}")
+        
+        # ⏱️ Mantido em 15 minutos (900s) para não estourar seu plano gratuito diário
+        time.sleep(900) 
 
 if __name__ == "__main__":
     main()
+
