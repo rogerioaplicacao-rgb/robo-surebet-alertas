@@ -1,36 +1,24 @@
 import os
-import threading
 import time
 import datetime
-from http.server import SimpleHTTPRequestHandler, HTTPServer
 import requests
 
 # ==============================================================================
 # 🔐 CONFIGURAÇÕES DE API, TELEGRAM E BANCA
 # ==============================================================================
-# Sua chave real da API-Football integrada com sucesso
 API_FOOTBALL_KEY = "8bb27bbe8a02bfaa26fce895168daeb6"
 
+# Uso de chaves diretas caso a variável do Render não esteja preenchida
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8071742858:AAFasipn1Jo2gkHNgrSiSwfn-ZXm29fI7qw")
 SEU_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "2030461760")
 
 BANCA_ALVO_OPERAÇÃO = 100.00 
 
-# Mapeamento oficial de IDs de Casas de Apostas dentro da API-Football
 CASAS_PERMITIDAS = {
     1: "Bet365",
     12: "Betano",
     14: "VBet"
 }
-
-# --- SERVIDOR SIMULADO PARA O RENDER ---
-def run_mock_server():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(('0.0.0.0', port), SimpleHTTPRequestHandler)
-    print(f"Servidor HTTP do Render ativo na porta {port}")
-    server.serve_forever()
-
-threading.Thread(target=run_mock_server, daemon=True).start()
 
 # --- FUNÇÃO DE ALERTA DO TELEGRAM ---
 def enviar_alerta_surebet(mensagem):
@@ -136,7 +124,6 @@ def varrer_oportunidades_multi_casa(jogos_notificados):
     data_hoje = datetime.datetime.now().strftime('%Y-%m-%d')
     params = {"date": data_hoje}
     
-    # Cabeçalho atualizado com os parâmetros aceitos diretamente na plataforma da API-Sports
     headers = {
         "x-apisports-key": API_FOOTBALL_KEY
     }
@@ -162,9 +149,7 @@ def main():
         except Exception as e:
             print(f"Erro no loop principal: {e}")
         
-        # ⏱️ Mantido em 15 minutos (900s) para não estourar seu plano gratuito diário
         time.sleep(900) 
 
 if __name__ == "__main__":
     main()
-
